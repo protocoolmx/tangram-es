@@ -1,5 +1,15 @@
 #pragma once
 
+#ifdef PLATFORM_HEADLESS
+
+#ifndef GL_GLEXT_PROTOTYPES
+#define GL_GLEXT_PROTOTYPES 1
+#endif
+
+#include "GL/gl.h"
+#include "GL/glext.h"
+#else
+
 #ifdef PLATFORM_ANDROID
 #include <GLES2/gl2platform.h>
 
@@ -66,3 +76,5 @@ static void glGenVertexArrays(GLsizei n, GLuint *arrays) {}
     #define glMapBuffer glMapBufferOES
     #define glUnmapBuffer glUnmapBufferOES
 #endif
+
+#endif // !PLATFORM_HEADLESS

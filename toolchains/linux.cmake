@@ -34,7 +34,7 @@ set(CORE_COMPILE_DEFS PLATFORM_LINUX)
 # load core library
 add_subdirectory(${PROJECT_SOURCE_DIR}/core)
 
-if(APPLICATION)
+if (APPLICATION)
 
   set(EXECUTABLE_NAME "tangram")
 
@@ -56,13 +56,9 @@ if(APPLICATION)
     add_subdirectory(${PROJECT_SOURCE_DIR}/platforms/common/glfw)
   endif()
 
-  # add sources and include headers
-  find_sources_and_include_directories(
-    ${PROJECT_SOURCE_DIR}/platforms/linux/src/*.h
-    ${PROJECT_SOURCE_DIR}/platforms/linux/src/*.cpp)
-
   add_executable(${EXECUTABLE_NAME}
-    ${SOURCES}
+    ${PROJECT_SOURCE_DIR}/platforms/linux/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/platforms/linux/src/platform_linux.cpp
     ${PROJECT_SOURCE_DIR}/platforms/common/platform_gl.cpp
     ${PROJECT_SOURCE_DIR}/platforms/common/urlClient.cpp
     ${PROJECT_SOURCE_DIR}/platforms/common/glfwApp.cpp
@@ -85,3 +81,40 @@ if(APPLICATION)
   add_resources(${EXECUTABLE_NAME} "${PROJECT_SOURCE_DIR}/scenes")
 
 endif()
+
+#if (HEADLESS)
+
+  set(EXECUTABLE_NAME "headless")
+
+  set(OPENGL_LIBRARIES -lOSMesa -lGL)
+
+  add_executable(${EXECUTABLE_NAME}
+    ${PROJECT_SOURCE_DIR}/platforms/linux/src/headless.cpp
+    ${PROJECT_SOURCE_DIR}/platforms/linux/src/platform_linux.cpp
+    ${PROJECT_SOURCE_DIR}/platforms/common/platform_gl.cpp
+    ${PROJECT_SOURCE_DIR}/platforms/common/headlessContext.cpp
+    ${PROJECT_SOURCE_DIR}/platforms/common/urlClient.cpp
+    )
+
+  target_include_directories(${EXECUTABLE_NAME}
+    PUBLIC
+    ${PROJECT_SOURCE_DIR}/platforms/common
+    ${PROJECT_SOURCE_DIR}/platforms/linux
+    ${PROJECT_SOURCE_DIR}/platforms/headless
+    ${OPENGL_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/../mesa-17.0.4/include
+    )
+
+  target_compile_definitions(${EXECUTABLE_NAME}
+    PRIVATE
+    PLATFORM_HEADLESS=1
+    )
+  target_link_libraries(${EXECUTABLE_NAME}
+    ${CORE_LIBRARY}
+    -lcurl
+    # only used when not using external lib
+    -ldl
+    -pthread
+    ${OPENGL_LIBRARIES})
+
+#endif()
