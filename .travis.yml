@@ -1,5 +1,6 @@
 language: android
 
+dist: trusty
 sudo: enabled
 
 branches:
@@ -36,6 +37,13 @@ matrix:
           jdk: oraclejdk8
 
 before_install:
+    - sudo add-apt-repository -y ppa:kevinkreiser/libsodium
+    - sudo add-apt-repository -y ppa:kevinkreiser/libpgm
+    - sudo add-apt-repository -y ppa:kevinkreiser/zeromq3
+    - sudo add-apt-repository -y ppa:kevinkreiser/czmq
+    - sudo apt-get update
+    - sudo apt-get install libzmq3-dev libczmq-dev
+
     - git submodule update --init
     - source ./scripts/travis/before_install.sh
 
