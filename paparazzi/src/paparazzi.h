@@ -29,7 +29,7 @@ public:
     void    cleanup();
 
 protected:
-    void    update();
+    bool    update();
 
     std::string         m_scene;
     double              m_lat;

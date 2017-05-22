@@ -24,7 +24,8 @@ SET(CMAKE_INSTALL_RPATH ${CMAKE_BINARY_DIR}/lib ${CMAKE_INSTALL_RPATH})
 
 add_executable(paparazzi_worker
   src/worker.cpp
-  src/paparazzi.cpp)
+  src/paparazzi.cpp
+  src/stb_image.cpp)
 
 target_include_directories(paparazzi_worker
   PUBLIC

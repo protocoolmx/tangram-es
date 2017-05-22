@@ -1,9 +1,12 @@
 #include "paparazzi.h"
 
+#include <prime_server/logging.hpp>
+
 using namespace Tangram;
 
-#define AA_SCALE 2.0
+#define AA_SCALE 1.0
 #define MAX_WAITING_TIME 100.0
+#define IMAGE_DEPTH 4
 
 #if PLATFORM_LINUX
 #include "platform_linux.h"
@@ -12,6 +15,8 @@ std::shared_ptr<LinuxPlatform> platform;
 #include "platform_osx.h"
 std::shared_ptr<OSXPlatform> platform;
 #endif
+#include "log.h"
+#include "gl/texture.h"
 
 #include "hash-library/md5.h"
 
@@ -20,12 +25,17 @@ std::shared_ptr<OSXPlatform> platform;
 #include <fstream>
 #include <regex>
 #include <sstream>
-#include <curl/curl.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include "glm/trigonometric.hpp"
+
+#include "stb_image_write.h"
 
 const headers_t::value_type CORS{"Access-Control-Allow-Origin", "*"};
 const headers_t::value_type PNG_MIME{"Content-type", "image/png"};
 const headers_t::value_type TXT_MIME{"Content-type", "text/plain;charset=utf-8"};
+
+const std::regex TILE_REGEX("\\/(\\d*)\\/(\\d*)\\/(\\d*)\\.png");
 
 unsigned long long timeStart;
 
@@ -37,45 +47,49 @@ double getTime() {
 }
 
 Paparazzi::Paparazzi()
-  : m_scene("scene.yaml"),
+  : m_scene(""),
     m_lat(0.0),
     m_lon(0.0),
     m_zoom(0.0f),
     m_rotation(0.0f),
     m_tilt(0.0),
-    m_width(100),
-    m_height(100) {
+    m_width(0),
+    m_height(0) {
 
     m_glContext = std::make_unique<HeadlessContext>();
     if (!m_glContext->init()) {
         throw std::runtime_error("Could not initialize GL context");
     }
-    m_glContext->resize(m_width, m_height);
+    m_glContext->resize(1, 1);
     if (!m_glContext->makeCurrent()) {
         throw std::runtime_error("Could not activate GL context");
     }
 
-    // Initialize Platform
+#if PLATFORM_LINUX
     UrlClient::Options urlClientOptions;
     urlClientOptions.numberOfThreads = 10;
-
     platform = std::make_shared<LinuxPlatform>(urlClientOptions);
+#elif PLATFORM_OSX
+    platform = std::make_shared<OSXPlatform>();
+#endif
 
     timeStart = getTime();
 
     m_map = std::unique_ptr<Tangram::Map>(new Tangram::Map(platform));
-    m_map->loadSceneAsync(m_scene.c_str());
+
+    setScene("scene.yaml");
+
     m_map->setupGL();
     m_map->setPixelScale(AA_SCALE);
-    m_map->resize(m_width*AA_SCALE, m_height*AA_SCALE);
-    update();
-    
+
+    //m_map->resize(m_width*AA_SCALE, m_height*AA_SCALE);
     //m_glContext->setScale(AA_SCALE);
-
-    setSize(m_width, m_height, 1.0);
-
+    //setSize(m_width, m_height, 1.0);
 
     Tangram::setDebugFlag(DebugFlags::tile_bounds, true);
+
+    logMsg("Done Init!\n");
+
 }
 
 Paparazzi::~Paparazzi() {
@@ -84,7 +98,7 @@ Paparazzi::~Paparazzi() {
 void Paparazzi::setSize (const int &_width, const int &_height, const float &_density) {
     if (_density*_width == m_width && _density*_height == m_height &&
         _density*AA_SCALE == m_map->getPixelScale()) { return; }
-    
+
     m_width = _width*_density;
     m_height = _height*_density;
 
@@ -93,7 +107,6 @@ void Paparazzi::setSize (const int &_width, const int &_height, const float &_de
         m_map->setPixelScale(_density*AA_SCALE);
     }
     m_map->resize(m_width*AA_SCALE, m_height*AA_SCALE);
-    update();
 
     m_glContext->resize(m_width, m_height);
 }
@@ -102,37 +115,33 @@ void Paparazzi::setZoom(const float &_zoom) {
     if (_zoom == m_zoom) { return; }
     m_zoom = _zoom;
     m_map->setZoom(_zoom);
-    update();
 }
 
 void Paparazzi::setTilt(const float &_deg) {
     if (_deg == m_tilt) { return; }
     m_tilt = _deg;
     m_map->setTilt(glm::radians(m_tilt));
-    update();
 }
 void Paparazzi::setRotation(const float &_deg) {
     if (_deg == m_rotation) { return; }
-    
+
     m_rotation = _deg;
     m_map->setRotation(glm::radians(m_rotation));
-    update();
 }
 
 void Paparazzi::setPosition(const double &_lon, const double &_lat) {
     if (_lon == m_lon && _lat == m_lat) { return; }
-    
+
     m_lon = _lon;
     m_lat = _lat;
     m_map->setPosition(m_lon, m_lat);
-    update();
 }
 
 void Paparazzi::setScene(const std::string &_url) {
     if (_url == m_scene) { return; }
     m_scene = _url;
-    m_map->loadSceneAsync(m_scene.c_str());
-    update();
+    m_map->loadScene(m_scene.c_str(), false,
+                     {SceneUpdate("global.sdk_mapzen_api_key", "vector-tiles-tyHL4AY")});
 }
 
 void Paparazzi::setSceneContent(const std::string &_yaml_content) {
@@ -150,24 +159,27 @@ void Paparazzi::setSceneContent(const std::string &_yaml_content) {
     out << _yaml_content.c_str();
     out.close();
 
-    m_map->loadSceneAsync(name.c_str());
-    update();
+    m_map->loadScene(name.c_str(), false, {SceneUpdate("global.sdk_mapzen_api_key", "mapzen-y6KCsnw")});
 }
 
-void Paparazzi::update () {
+bool Paparazzi::update() {
     double startTime = getTime();
     float delta = 0.0;
 
-    bool bFinish = false;
-    while (delta < MAX_WAITING_TIME && !bFinish) {
-        // Update Network Queue
-        bFinish = m_map->update(10.);
+    while (delta < MAX_WAITING_TIME) {
+        logMsg("Update: waiting %f\n", delta);
+
+        bool bFinish = m_map->update(10.);
         delta = float(getTime() - startTime);
+
         if (bFinish) {
-            logMsg("Tangram::Update: Finish!\n");
+            logMsg("Update: Finish!\n");
+            return true;
         }
+        usleep(10000);
     }
-    logMsg("Paparazzi::Update: Done waiting...\n");
+    logMsg("Update: Done waiting...\n");
+    return false;
 }
 
 struct coord_s {
@@ -208,20 +220,20 @@ void lnglat_to_coord(double lng_deg, double lat_deg, int zoom, coord_s *out) {
     out->z = zoom;
 }
 
-// prime_server stuff
-worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* request_info){
+worker_t::result_t Paparazzi::work(const std::list<zmq::message_t>& job, void* request_info){
     // false means this is going back to the client, there is no next stage of the pipeline
     worker_t::result_t result{false, {}, ""};
 
     // This type differs per protocol hence the void* fun
     auto& info = *static_cast<http_request_info_t*>(request_info);
 
-    // Try to generate a response 
+    // Try to generate a response
     http_response_t response;
     try {
         // double start_call = getTime();
 
-        //TODO: 
+        logging::INFO(std::string("Handle request: ") + static_cast<const char*>(job.front().data()));
+        //TODO:
         //   - actually use/validate the request parameters
         auto request = http_request_t::from_string(static_cast<const char*>(job.front().data()),
                                                    job.front().size());
@@ -233,24 +245,25 @@ worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* 
           result.messages.emplace_back(response.to_string());
           return result;
         }
-        
+
         //  SCENE
         //  ---------------------
         auto scene_itr = request.query.find("scene");
         if (scene_itr == request.query.cend() || scene_itr->second.size() == 0) {
-            // If there is NO SCENE QUERY value 
-            if (request.body.empty()) 
+            // If there is NO SCENE QUERY value
+            if (request.body.empty())
                 // if there is not POST body content return error...
-                throw std::runtime_error("scene is required punk");
+                throw std::runtime_error("Missing scene parameter");
 
             // ... other whise load content
             setSceneContent(request.body);
+
             // The size of the custom scene is unique enough
             result.heart_beat = std::to_string(request.body.size());
-        }
-        else {
+        } else {
             // If there IS a SCENE QUERRY value load it
             setScene(scene_itr->second.front());
+
             result.heart_beat = scene_itr->second.front();
         }
 
@@ -278,7 +291,8 @@ worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* 
         auto zoom_itr = request.query.find("zoom");
         if (zoom_itr == request.query.cend() || zoom_itr->second.size() == 0)
             size_and_pos = false;
-            
+
+        std::smatch match;
 
         if (size_and_pos) {
             // Set Map and OpenGL context size
@@ -289,36 +303,29 @@ worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* 
                         std::stod(lat_itr->second.front()));
             setZoom(std::stof(zoom_itr->second.front()));
 
+        } else if (std::regex_search(request.path, match, TILE_REGEX) && match.size() == 4) {
+            setSize(256, 256, pixel_density);
+
+            int tile_coord[3] = {0,0,0};
+            for (int i = 0; i < 3; i++) {
+                std::istringstream cur(match.str(i+1));
+                cur >> tile_coord[i];
+            }
+            coord_s tile;
+            tile.z = tile_coord[0];
+            setZoom(tile.z);
+
+            tile.x = tile_coord[1];
+            tile.y = tile_coord[2];
+
+            double n = pow(2, tile.z);
+            double lng_deg = (tile.x + 0.5) / n * 360.0 - 180.0;
+            double lat_rad = atan(sinh(M_PI * (1 - 2 * (tile.y + 0.5) / n)));
+            double lat_deg = radians_to_degrees(lat_rad);
+
+            setPosition(lng_deg, lat_deg);
         } else {
-            // Parse tile url
-            const std::regex re("\\/(\\d*)\\/(\\d*)\\/(\\d*)\\.png");
-            std::smatch match;
-
-            if (std::regex_search(request.path, match, re) && match.size() == 4) {
-                setSize(256,256, pixel_density);
-
-                int tile_coord[3] = {0,0,0};
-                for (int i = 0; i < 3; i++) {
-                    std::istringstream cur(match.str(i+1));
-                    cur >> tile_coord[i];
-                }
-                coord_s tile;
-                tile.z = tile_coord[0];
-                setZoom(tile.z);
-
-                tile.x = tile_coord[1];
-                tile.y = tile_coord[2];
-
-                double n = pow(2, tile.z);
-                double lng_deg = (tile.x + 0.5) / n * 360.0 - 180.0;
-                double lat_rad = atan(sinh(M_PI * (1 - 2 * (tile.y + 0.5) / n)));
-                double lat_deg = radians_to_degrees(lat_rad);
-                    
-                setPosition(lng_deg, lat_deg);
-            }
-            else {
-                throw std::runtime_error("not enought data to construct image");
-            }
+            throw std::runtime_error("Missing parameters to construct image");
         }
 
         //  OPTIONAL tilt and rotation
@@ -345,21 +352,42 @@ worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* 
 
         // Time to render
         //  ---------------------
-        std::string image;
-        if (m_map) {
-            update();
 
-            // Render Tangram Scene
-            //m_glContext->bind();
-            m_map->render();
-            //m_glContext->unbind();
-   
-            // Once the main FBO is draw take a picture
-            //m_glContext->getPixelsAsString(image);
-            // double total_time = getTime()-start_call;
-            // LOG("TOTAL CALL: %f", total_time);
-            // LOG("TOTAL speed: %f millisec per pixel", (total_time/((m_width * m_height)/1000.0)));
+        if (!update()) {
+            throw std::runtime_error("Image creation timeout");
         }
+
+        m_glContext->makeCurrent();
+
+        // Render Tangram Scene
+        //m_glContext->bind();
+        m_map->render();
+
+        GL::finish();
+
+        //m_glContext->unbind();
+
+        // Once the main FBO is draw take a picture
+        //m_glContext->getPixelsAsString(image);
+        // double total_time = getTime()-start_call;
+        // LOG("TOTAL CALL: %f", total_time);
+        // LOG("TOTAL speed: %f millisec per pixel", (total_time/((m_width * m_height)/1000.0)));
+
+        std::string image;
+
+        // m_glContext->writeImage("test.ppm");
+
+        //Texture::flipImageData(m_glContext->buffer(), m_glContext->width(), m_glContext->height(), IMAGE_DEPTH);
+
+        stbi_write_png_to_func([](void *context, void *data, int size) {
+                static_cast<std::string*>(context)->append(static_cast<const char*>(data), size);
+            },
+            &image,
+            m_glContext->width(),
+            m_glContext->height(),
+            IMAGE_DEPTH,
+            m_glContext->buffer(),
+            m_glContext->width() * IMAGE_DEPTH);
 
         response = http_response_t(200, "OK", image, headers_t{CORS, PNG_MIME}, "HTTP/1.1");
     }
@@ -369,7 +397,7 @@ worker_t::result_t Paparazzi::work (const std::list<zmq::message_t>& job, void* 
 
     response.from_info(info);
     result.messages.emplace_back(response.to_string());
-    
+
     return result;
 }
 
