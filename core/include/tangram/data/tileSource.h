@@ -22,6 +22,20 @@ class TileSource : public std::enable_shared_from_this<TileSource> {
 
 public:
 
+    struct SourceOptions {
+        // Minimum zoom for which tiles will be displayed
+        int32_t minDisplayZoom = -1;
+        // Maximum zoom for which tiles will be displayed
+        int32_t maxDisplayZoom = -1;
+        // Maximum zoom for which tiles will be requested
+        int32_t maxZoom = 18;
+        // controls the zoom level for the tiles of the tilesource to scale the tiles to
+        // apt pixel
+        // 0: 256 pixel tiles
+        // 1: 512 pixel tiles
+        int32_t zoomBias = 0;
+    };
+
     /* Calculate the zoom level bias to be applied given tileSize in pixel units.
      * 256  pixel -> 0
      * 512  pixel -> 1
@@ -61,8 +75,7 @@ public:
      * and zoom level of tiles to produce their URL.
      */
     TileSource(const std::string& _name, std::unique_ptr<DataSource> _sources,
-               int32_t _minDisplayZoom = -1, int32_t _maxDisplayZoom = -1, int32_t _maxZoom = 18,
-               int32_t _zoomBias = 0);
+               SourceOptions _sourceOptions);
 
     virtual ~TileSource();
 
@@ -101,13 +114,15 @@ public:
     /* Generation ID of TileSource state (incremented for each update, e.g. on clearData()) */
     int64_t generation() const { return m_generation; }
 
-    int32_t minDisplayZoom() const { return m_minDisplayZoom; }
-    int32_t maxDisplayZoom() const { return m_maxDisplayZoom; }
-    int32_t maxZoom() const { return m_maxZoom; }
-    int32_t zoomBias() const { return m_zoomBias; }
+    const SourceOptions& sourceOptions() { return m_sourceOptions; }
+    int32_t minDisplayZoom() const { return m_sourceOptions.minDisplayZoom; }
+    int32_t maxDisplayZoom() const { return m_sourceOptions.maxDisplayZoom; }
+    int32_t maxZoom() const { return m_sourceOptions.maxZoom; }
+    int32_t zoomBias() const { return m_sourceOptions.zoomBias; }
 
     bool isActiveForZoom(const float _zoom) const {
-        return _zoom >= m_minDisplayZoom && (m_maxDisplayZoom == -1 || _zoom <= m_maxDisplayZoom);
+        return _zoom >= m_sourceOptions.minDisplayZoom &&
+            (m_sourceOptions.maxDisplayZoom == -1 || _zoom <= m_sourceOptions.maxDisplayZoom);
     }
 
     /* assign/get raster datasources to this datasource */
@@ -133,20 +148,8 @@ protected:
     // Name used to identify this source in the style sheet
     std::string m_name;
 
-    // Minimum zoom for which tiles will be displayed
-    int32_t m_minDisplayZoom;
-
-    // Maximum zoom for which tiles will be displayed
-    int32_t m_maxDisplayZoom;
-
-    // Maximum zoom for which tiles will be requested
-    int32_t m_maxZoom;
-
-    // controls the zoom level for the tiles of the tilesource to scale the tiles to
-    // apt pixel
-    // 0: 256 pixel tiles
-    // 1: 512 pixel tiles
-    int32_t m_zoomBias;
+    // Properties like zoom dependent props or geometry generation props
+    SourceOptions m_sourceOptions;
 
     // Unique id for TileSource
     int32_t m_id;
