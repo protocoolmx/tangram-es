@@ -10,7 +10,8 @@ ExternalProject_Add(
   GIT_REPOSITORY "https://github.com/kevinkreiser/prime_server.git"
 
   UPDATE_COMMAND ""
-  PATCH_COMMAND git apply ${CMAKE_CURRENT_SOURCE_DIR}/link-pthread.patch
+  PATCH_COMMAND ""
+  # git apply ${CMAKE_CURRENT_SOURCE_DIR}/link-pthread.patch
 
   BUILD_IN_SOURCE 1
   SOURCE_DIR "${CMAKE_BINARY_DIR}/prime_server"
@@ -24,6 +25,8 @@ ExternalProject_Add(
 
   INSTALL_COMMAND make install
 )
+
+set(external-prime_server_CXXFLAGS "-lpthread")
 
 ExternalProject_Get_Property(external-prime_server install_dir)
 
