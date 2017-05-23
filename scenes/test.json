@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-ide",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2017-05-22T13:02:58Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/26507932",
+        "highway": "residential",
+        "name": "Sergiusza Prokofiewa",
+        "surface": "asphalt"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [ [
+            [-73.9903, 40.74433],
+            [-73.984770, 40.734807],
+            [-73.998674, 40.732172],
+            [-73.996142, 40.741050],
+            [-73.9903, 40.74433]
+          ]
+        ]
+      },
+      "id": "way/26507932"
+    }
+  ]
+}

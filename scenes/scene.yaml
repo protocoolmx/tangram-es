@@ -25,6 +25,8 @@ cameras:
     perspective-camera:
         # Manhattan
         position: [-74.00976419448854, 40.70532700869127, 16]
+        #position: [20.8469767, 52.2747936, 16]
+        # position: [-74.00976419448854, 40.70532700869127, 16]
         type: perspective
         fov: 45
         max_tilt: [[2, 0], [16, 90]]
@@ -85,7 +87,7 @@ styles:
                     color.rgb *= 1.25; // pump up the colors
                     color.a = 0.5;     // translucent
         draw: # default draw parameters
-            color: function() { return feature.colour || 'gray'; }
+            color: function() { return feature.colour || 'red'; }
             width: 6px
             outline:
                 color: [.8, .8, .8]
@@ -94,8 +96,8 @@ styles:
 
 sources:
     osm:
-        type: MVT
-        url: https://tile.mapzen.com/mapzen/vector/v1/all/{z}/{x}/{y}.mvt
+        type: GeoJSON
+        url: https://tile.mapzen.com/mapzen/vector/v1/all/{z}/{x}/{y}.json
         max_zoom: 16
         url_params:
             api_key: global.sdk_mapzen_api_key
@@ -697,3 +699,21 @@ layers:
                 style: transit-lines
                 order: 400
 
+    blah:
+        data: { source: test }
+        filter:
+            highway: residential
+        draw:
+            lines:
+                style: transit-lines
+                order: 400
+                cap: round
+        mylayer:
+            filter:
+                - function() { return feature.label_placement; }
+                - type: point
+            draw:
+              icons:
+                  sprite: sunburst
+                  collide: false
+                  transition: { show: { time: 0s }, hide: { time: 0s } }
