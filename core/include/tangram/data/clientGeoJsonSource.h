@@ -19,17 +19,20 @@ class ClientGeoJsonSource : public TileSource {
 public:
 
     ClientGeoJsonSource(std::shared_ptr<Platform> _platform, const std::string& _name,
-            const std::string& _url, TileSource::SourceOptions _sourceOptions);
+            const std::string& _url, TileSource::SourceOptions _sourceOptions,
+            bool generateCentroids);
     ~ClientGeoJsonSource();
 
     // http://www.iana.org/assignments/media-types/application/geo+json
     virtual const char* mimeType() const override { return "application/geo+json"; };
 
     // Add geometry from a GeoJSON string
-    void addData(const std::string& _data);
+    void addData(const std::string& _data, bool _generateCentroids);
     void addPoint(const Properties& _tags, LngLat _point);
     void addLine(const Properties& _tags, const Coordinates& _line);
-    void addPoly(const Properties& _tags, const std::vector<Coordinates>& _poly);
+    void addPoly(const Properties& _tags, const std::vector<Coordinates>& _poly,
+            bool _generateCentroids = false);
+    void generateLabelCentroidFeature();
 
     virtual void loadTileData(std::shared_ptr<TileTask> _task, TileTaskCb _cb) override;
     std::shared_ptr<TileTask> createTask(TileID _tileId, int _subTask) override;
